@@ -9,11 +9,12 @@ export const CONFIG_FULL_PATH = ".github/.ubiquity-os.config.yml";
 export const DEV_CONFIG_FULL_PATH = ".github/.ubiquity-os.config.dev.yml";
 export const CONFIG_ORG_REPO = ".ubiquity-os";
 
-export async function getConfigurationFromRepo(context: GitHubContext, repository: string, owner: string) {
+export async function getConfigurationFromRepo(context: GitHubContext, repository: string, owner: string, ref?: string) {
   const rawData = await download({
     context,
     repository,
     owner,
+    ref,
   });
   const { yaml, errors } = parseYaml(rawData);
   const targetRepoConfiguration: PluginConfiguration | null = yaml;
@@ -59,10 +60,11 @@ export async function getConfig(context: GitHubContext): Promise<PluginConfigura
   }
 
   let mergedConfiguration: PluginConfiguration = defaultConfiguration;
+  const ref = "ref" in payload && payload.ref !== null ? payload.ref : undefined;
 
   const configurations = await Promise.all([
-    getConfigurationFromRepo(context, CONFIG_ORG_REPO, payload.repository.owner.login),
-    getConfigurationFromRepo(context, payload.repository.name, payload.repository.owner.login),
+    getConfigurationFromRepo(context, CONFIG_ORG_REPO, payload.repository.owner.login, ref),
+    getConfigurationFromRepo(context, payload.repository.name, payload.repository.owner.login, ref),
   ]);
 
   configurations.forEach((configuration) => {
@@ -138,7 +140,17 @@ function checkExpression(value: string, allIds: Set<string>, calledIds: Set<stri
   }
 }
 
-async function download({ context, repository, owner }: { context: GitHubContext; repository: string; owner: string }): Promise<string | null> {
+async function download({
+  context,
+  repository,
+  owner,
+  ref,
+}: {
+  context: GitHubContext;
+  repository: string;
+  owner: string;
+  ref?: string;
+}): Promise<string | null> {
   if (!repository || !owner) throw new Error("Repo or owner is not defined");
   try {
     const { data } = await context.octokit.rest.repos.getContent({
@@ -146,7 +158,9 @@ async function download({ context, repository, owner }: { context: GitHubContext
       repo: repository,
       path: context.eventHandler.environment === "production" ? CONFIG_FULL_PATH : DEV_CONFIG_FULL_PATH,
       mediaType: { format: "raw" },
+      ref,
     });
+    console.log("Data: ", data);
     return data as unknown as string; // this will be a string if media format is raw
   } catch (err) {
     console.error(err);
